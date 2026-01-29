@@ -1,0 +1,22 @@
+{
+  "app.title": "3D 아바타 채팅",
+  "chat.greeting.line1": "안녕하세요.",
+  "chat.greeting.highlight": "참가기업을 위한\n인터배터리 AI",
+  "chat.greeting.line2": " 입니다.",
+  "chat.greeting.line3": "무엇을 도와드릴까요?",
+  "avatar.startConversation": "대화 시작",
+  "avatar.preparing": "준비 중...",
+  "avatar.endConversation": "대화 종료",
+  "avatar.listening": "듣는 중...",
+  "avatar.thinking": "생각 중...",
+  "avatar.speaking": "말하는 중...",
+  "avatar.micOn": "마이크 켜기",
+  "avatar.micOff": "마이크 끄기",
+  "chat.placeholder": "메시지를 입력하세요...",
+  "chat.send": "전송",
+  "chat.switchToAvatar": "아바타 모드",
+  "chat.switchToChat": "채팅 모드",
+  "common.back": "뒤로",
+  "common.loading": "로딩 중...",
+  "common.error": "오류가 발생했습니다"
+}

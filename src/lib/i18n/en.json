@@ -1,0 +1,22 @@
+{
+  "app.title": "3D Avatar Chat",
+  "chat.greeting.line1": "Hello.",
+  "chat.greeting.highlight": "InterBattery AI\nfor Exhibitors",
+  "chat.greeting.line2": ".",
+  "chat.greeting.line3": "How can I help you?",
+  "avatar.startConversation": "Start Conversation",
+  "avatar.preparing": "Preparing...",
+  "avatar.endConversation": "End Conversation",
+  "avatar.listening": "Listening...",
+  "avatar.thinking": "Thinking...",
+  "avatar.speaking": "Speaking...",
+  "avatar.micOn": "Turn Mic On",
+  "avatar.micOff": "Turn Mic Off",
+  "chat.placeholder": "Type a message...",
+  "chat.send": "Send",
+  "chat.switchToAvatar": "Avatar Mode",
+  "chat.switchToChat": "Chat Mode",
+  "common.back": "Back",
+  "common.loading": "Loading...",
+  "common.error": "An error occurred"
+}

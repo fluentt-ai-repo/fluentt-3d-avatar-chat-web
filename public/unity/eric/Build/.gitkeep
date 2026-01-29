@@ -1,0 +1,19 @@
+# Unity WebGL Build Placeholder
+
+Place your Unity WebGL build files here:
+- app.loader.js
+- app.framework.js
+- app.data
+- app.wasm
+
+Build Settings:
+- Unity 6 (6000.0.x)
+- WebGL 2.0
+- Compression: Brotli or Gzip
+- Memory Size: 256MB+
+
+Required Unity Scripts:
+- ReactBridge.cs (receives messages from React)
+- NoServerDataProcessor.cs (processes animation frames)
+
+See CLAUDE.md for Unity integration details.

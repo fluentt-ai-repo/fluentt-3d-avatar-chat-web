@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --primary: #6490ff;
+  --primary-hover: #4070ff;
+  --background-light: #f0f3ff;
+  --text-primary: #111111;
+  --text-secondary: #666666;
+
+  /* Font scale for accessibility */
+  --font-scale: 1;
+}
+
+[data-font-size="large"] {
+  --font-scale: 1.2;
+}
+
+[data-font-size="xlarge"] {
+  --font-scale: 1.4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-background-light: var(--background-light);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: 'Noto Sans KR', sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Hide scrollbar */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Scalable text utilities */
+  .text-scalable {
+    font-size: calc(1em * var(--font-scale, 1));
+  }
+
+  .text-scale-14 { font-size: calc(14px * var(--font-scale, 1)); }
+  .text-scale-16 { font-size: calc(16px * var(--font-scale, 1)); }
+  .text-scale-18 { font-size: calc(18px * var(--font-scale, 1)); }
+  .text-scale-20 { font-size: calc(20px * var(--font-scale, 1)); }
+  .text-scale-23 { font-size: calc(23px * var(--font-scale, 1)); }
+}
+
+/* Wave animation for volume indicator */
+@keyframes wave {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(var(--scale-value, 1.5));
+  }
+}
+
+.animate-wave {
+  animation: wave 1s ease-in-out infinite;
+}
