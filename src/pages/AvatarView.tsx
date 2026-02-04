@@ -20,8 +20,7 @@ interface AvatarViewProps {
   userVolume: number;
   onBack: () => void;
   onSwitchToChat: () => void;
-  conversationStarted: boolean;
-  onStartConversation: () => void;
+  isAgentReady: boolean;
 }
 
 export function AvatarView({
@@ -30,13 +29,12 @@ export function AvatarView({
   userVolume,
   onBack,
   onSwitchToChat,
-  conversationStarted,
-  onStartConversation,
+  isAgentReady,
 }: AvatarViewProps) {
-  // Agent ready state (ready when state is 'listening')
-  const isAgentReady = agentState === 'listening';
-  const showReadyScreen = !conversationStarted;
   const { t } = useTranslation();
+
+  // Loading state: show loading until both Unity and Agent are ready
+  const isLoading = !isAgentReady;
 
   // Unity context - load when this component mounts
   const buildName = import.meta.env.VITE_UNITY_BUILD_NAME || 'avatar';
@@ -93,9 +91,9 @@ export function AvatarView({
     };
   }, [localParticipant]);
 
-  // Auto-enable microphone when Unity is loaded, connected, AND conversation started
+  // Auto-enable microphone when Unity is loaded, connected, AND agent is ready
   useEffect(() => {
-    if (localParticipant && isLoaded && connectionState === ConnectionState.Connected && conversationStarted) {
+    if (localParticipant && isLoaded && connectionState === ConnectionState.Connected && isAgentReady) {
       const timer = setTimeout(() => {
         if (!hasUserInteracted.current) {
           localParticipant.setMicrophoneEnabled(true);
@@ -105,7 +103,7 @@ export function AvatarView({
 
       return () => clearTimeout(timer);
     }
-  }, [localParticipant, isLoaded, connectionState, conversationStarted]);
+  }, [localParticipant, isLoaded, connectionState, isAgentReady]);
 
   const toggleMic = async () => {
     if (localParticipant) {
@@ -179,10 +177,13 @@ export function AvatarView({
     }
   }, [isLoaded, latestFrame, sendMessage]);
 
+  // Show loading overlay until both Unity is loaded AND agent is ready
+  const showLoadingOverlay = !isLoaded || isLoading;
+
   return (
     <div className="bg-white relative w-full h-full overflow-hidden">
       {/* Loading overlay - Unity must render in background for loading to progress */}
-      {!isLoaded && (
+      {showLoadingOverlay && (
         <div className="absolute inset-0 z-[100] bg-white flex flex-col">
           {/* Header - Fixed at top with safe-area */}
           <div
@@ -194,7 +195,7 @@ export function AvatarView({
           {/* Spacer for fixed header */}
           <div style={{ height: 'calc(56px + env(safe-area-inset-top, 0px))' }} />
           <div className="flex-1 flex items-center justify-center">
-            <LoadingOverlay progress={loadingProgression} />
+            <LoadingOverlay progress={isLoaded ? 1 : loadingProgression} />
           </div>
         </div>
       )}
@@ -231,94 +232,72 @@ export function AvatarView({
           </div>
         </div>
 
-        {/* Footer - Conditional rendering based on conversation state */}
-        {showReadyScreen ? (
-          /* Start Conversation Button - Before conversation starts */
-          <div className="shrink-0 relative z-[70]">
+        {/* Footer - Conversation UI */}
+        <div className="shrink-0 relative z-[70]">
+          {/* Gradient overlay */}
+          <div className="w-full h-[100px] bg-gradient-to-b from-transparent to-white -mt-[100px] pointer-events-none" />
+
+          {/* Volume indicator */}
+          {isMicEnabled && (
+            <div
+              className="absolute left-0 right-0 bottom-0 pointer-events-none"
+              style={{
+                height: '150px',
+                zIndex: 60,
+                background: 'linear-gradient(to top, rgba(0, 45, 152, 0.5), transparent)',
+                opacity: userVolume > 0.02 ? Math.min((userVolume - 0.02) * 3, 1) : 0,
+                transition: 'opacity 0.2s ease-in-out',
+              }}
+            />
+          )}
+
+          {/* Footer background layer - z-55, covered by volume */}
+          <div className="absolute inset-0 z-[55]">
             <div className="w-full h-[100px] bg-gradient-to-b from-transparent to-white -mt-[100px] pointer-events-none" />
             <div
-              className="bg-white flex items-end justify-center px-8 py-4"
-              style={{ paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
-            >
-              <button
-                onClick={onStartConversation}
-                disabled={!isLoaded || !isAgentReady}
-                className="flex-1 max-w-[280px] bg-[#002D98] h-14 rounded-full flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50"
-              >
-                <span className="text-white font-medium text-[16px]">
-                  {isAgentReady ? t('avatar.startConversation') : t('avatar.preparing')}
-                </span>
-              </button>
-            </div>
+              className="bg-white h-[70px] w-full"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+            />
           </div>
-        ) : (
-          /* Normal Footer - After conversation starts */
-          <div className="shrink-0 relative z-[70]">
-            {/* Gradient overlay */}
-            <div className="w-full h-[100px] bg-gradient-to-b from-transparent to-white -mt-[100px] pointer-events-none" />
 
-            {/* Volume indicator */}
-            {isMicEnabled && (
-              <div
-                className="absolute left-0 right-0 bottom-0 pointer-events-none"
-                style={{
-                  height: '150px',
-                  zIndex: 60,
-                  background: 'linear-gradient(to top, rgba(0, 45, 152, 0.5), transparent)',
-                  opacity: userVolume > 0.02 ? Math.min((userVolume - 0.02) * 3, 1) : 0,
-                  transition: 'opacity 0.2s ease-in-out',
-                }}
-              />
-            )}
-
-            {/* Footer background layer - z-55, covered by volume */}
-            <div className="absolute inset-0 z-[55]">
-              <div className="w-full h-[100px] bg-gradient-to-b from-transparent to-white -mt-[100px] pointer-events-none" />
-              <div
-                className="bg-white h-[70px] w-full"
-                style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-              />
-            </div>
-
-            {/* Buttons/text layer - z-90, above volume */}
-            <div
-              className="relative z-[90] flex items-center justify-between px-8 py-4"
-              style={{ paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
+          {/* Buttons/text layer - z-90, above volume */}
+          <div
+            className="relative z-[90] flex items-center justify-between px-8 py-4"
+            style={{ paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
+          >
+            {/* Chat mode button */}
+            <button
+              onClick={onSwitchToChat}
+              className="w-16 h-16 rounded-full bg-white flex items-center justify-center"
+              style={{ border: '1.5px solid rgba(0, 45, 152, 0.2)' }}
             >
-              {/* Chat mode button */}
-              <button
-                onClick={onSwitchToChat}
-                className="w-16 h-16 rounded-full bg-white flex items-center justify-center"
-                style={{ border: '1.5px solid rgba(0, 45, 152, 0.2)' }}
-              >
-                <img src={iconChat} alt="" className="w-6 h-6" />
-              </button>
+              <img src={iconChat} alt="" className="w-6 h-6" />
+            </button>
 
-              {/* Agent state */}
-              <div className="flex-1 text-center">
-                <p className="text-[16px] text-[#666666] font-medium">
-                  {agentState === 'listening' && t('avatar.listening')}
-                  {agentState === 'thinking' && t('avatar.thinking')}
-                  {agentState === 'speaking' && t('avatar.speaking')}
-                </p>
-              </div>
-
-              {/* Mic toggle */}
-              <button
-                onClick={toggleMic}
-                onDoubleClick={handleInterruptAgent}
-                className="w-16 h-16 rounded-full bg-white flex items-center justify-center"
-                style={{ border: '1.5px solid rgba(0, 45, 152, 0.2)' }}
-              >
-                <img
-                  src={isMicEnabled ? iconMic : iconMicMuted}
-                  alt=""
-                  className="w-6 h-6"
-                />
-              </button>
+            {/* Agent state */}
+            <div className="flex-1 text-center">
+              <p className="text-[16px] text-[#666666] font-medium">
+                {agentState === 'listening' && t('avatar.listening')}
+                {agentState === 'thinking' && t('avatar.thinking')}
+                {agentState === 'speaking' && t('avatar.speaking')}
+              </p>
             </div>
+
+            {/* Mic toggle */}
+            <button
+              onClick={toggleMic}
+              onDoubleClick={handleInterruptAgent}
+              className="w-16 h-16 rounded-full bg-white flex items-center justify-center"
+              style={{ border: '1.5px solid rgba(0, 45, 152, 0.2)' }}
+            >
+              <img
+                src={isMicEnabled ? iconMic : iconMicMuted}
+                alt=""
+                className="w-6 h-6"
+              />
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

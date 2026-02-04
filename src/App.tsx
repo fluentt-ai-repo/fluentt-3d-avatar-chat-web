@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useLocalParticipant, useRoomContext } from '@livekit/components-react';
 import { isADKMode, ADK_USER_ID } from '@/lib/config';
 import { LiveKitProvider } from '@/lib/providers/LiveKitProvider';
@@ -21,6 +21,7 @@ type ScreenType = 'chat' | 'avatar';
 export function App() {
   const [screen, setScreen] = useState<ScreenType>('chat');
   const [conversationStarted, setConversationStarted] = useState(false);
+  const [isAgentReady, setIsAgentReady] = useState(false);
 
   /**
    * Switch to chat screen
@@ -63,6 +64,7 @@ export function App() {
 
   const handleSwitchToAvatar = useCallback(() => {
     setConversationStarted(false);  // Reset conversation state
+    setIsAgentReady(false);         // Reset agent ready state
     setScreen('avatar');
   }, []);
   const handleBack = useCallback(() => {
@@ -97,6 +99,8 @@ export function App() {
               onSwitchToChat={handleSwitchToChat}
               conversationStarted={conversationStarted}
               onConversationStart={() => setConversationStarted(true)}
+              isAgentReady={isAgentReady}
+              onAgentReady={() => setIsAgentReady(true)}
             />
           </LiveKitSessionHandler>
         </LiveKitProvider>
@@ -126,6 +130,8 @@ export function App() {
               onSwitchToChat={handleSwitchToChat}
               conversationStarted={conversationStarted}
               onConversationStart={() => setConversationStarted(true)}
+              isAgentReady={isAgentReady}
+              onAgentReady={() => setIsAgentReady(true)}
             />
           )}
         </LiveKitSessionHandler>
@@ -142,41 +148,58 @@ function AvatarViewWithSession({
   onSwitchToChat,
   conversationStarted,
   onConversationStart,
+  isAgentReady,
+  onAgentReady,
 }: {
   onBack: () => void;
   onSwitchToChat: () => void;
   conversationStarted: boolean;
   onConversationStart: () => void;
+  isAgentReady: boolean;
+  onAgentReady: () => void;
 }) {
   const { agentState, avatarMessage, userVolume } = useLiveKitSession();
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
 
-  const handleStartConversation = useCallback(async () => {
-    if (!localParticipant || !room) return;
+  // Auto-start conversation when agent becomes ready (listening state)
+  useEffect(() => {
+    if (agentState === 'listening' && !conversationStarted) {
+      // Mark agent as ready (ends loading screen)
+      onAgentReady();
+      // Transition to conversation UI
+      onConversationStart();
+      console.log('[AvatarViewWithSession] Agent ready, auto-starting conversation');
 
-    // UI transition immediately
-    onConversationStart();
+      // Send start_conversation RPC
+      const startConversation = async () => {
+        if (!localParticipant || !room) return;
 
-    try {
-      const remoteParticipants = Array.from(room.remoteParticipants.values());
-      const agentParticipant = remoteParticipants.find(p => p.identity.startsWith('agent'));
+        try {
+          const remoteParticipants = Array.from(room.remoteParticipants.values());
+          const agentParticipant = remoteParticipants.find(p =>
+            p.identity.startsWith('agent')
+          );
 
-      if (agentParticipant) {
-        console.log('[AvatarViewWithSession] Sending start_conversation RPC...');
-        await localParticipant.performRpc({
-          destinationIdentity: agentParticipant.identity,
-          method: 'start_conversation',
-          payload: '',
-        });
-        console.log('[AvatarViewWithSession] start_conversation RPC sent');
-      } else {
-        console.warn('[AvatarViewWithSession] No agent participant found for RPC');
-      }
-    } catch (error) {
-      console.error('[AvatarViewWithSession] Failed to start conversation:', error);
+          if (agentParticipant) {
+            console.log('[AvatarViewWithSession] Sending start_conversation RPC...');
+            await localParticipant.performRpc({
+              destinationIdentity: agentParticipant.identity,
+              method: 'start_conversation',
+              payload: '',
+            });
+            console.log('[AvatarViewWithSession] start_conversation RPC sent');
+          } else {
+            console.warn('[AvatarViewWithSession] No agent participant found for RPC');
+          }
+        } catch (error) {
+          console.error('[AvatarViewWithSession] Failed to start conversation:', error);
+        }
+      };
+
+      startConversation();
     }
-  }, [localParticipant, room, onConversationStart]);
+  }, [agentState, conversationStarted, localParticipant, room, onAgentReady, onConversationStart]);
 
   return (
     <AvatarView
@@ -185,8 +208,7 @@ function AvatarViewWithSession({
       userVolume={userVolume}
       onBack={onBack}
       onSwitchToChat={onSwitchToChat}
-      conversationStarted={conversationStarted}
-      onStartConversation={handleStartConversation}
+      isAgentReady={isAgentReady}
     />
   );
 }
