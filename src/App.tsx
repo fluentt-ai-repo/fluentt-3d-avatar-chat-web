@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useLocalParticipant, useRoomContext } from '@livekit/components-react';
 import { isADKMode, ADK_USER_ID } from '@/lib/config';
 import { LiveKitProvider } from '@/lib/providers/LiveKitProvider';
 import { LiveKitSessionHandler, useLiveKitSession } from '@/lib/providers/LiveKitSessionHandler';
@@ -8,6 +7,10 @@ import { AvatarView } from '@/pages/AvatarView';
 import { useSessionStore } from '@/lib/store/session-store';
 import { useSessionIdStore } from '@/lib/store/session-id-store';
 import { sessionAPIClient } from '@/lib/api/session-api';
+
+// Avatar 관련 이미지 프리로드
+import avatarLoadingImage from '@/assets/image-avatar-loading.png';
+import avatarBackground from '@/assets/image-avatar-background-4x.png';
 
 type ScreenType = 'chat' | 'avatar';
 
@@ -23,43 +26,57 @@ export function App() {
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isAgentReady, setIsAgentReady] = useState(false);
 
+  // 앱 마운트 시 Avatar 관련 이미지 프리로드
+  useEffect(() => {
+    const images = [avatarLoadingImage, avatarBackground];
+    images.forEach(src => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, []);
+
   /**
    * Switch to chat screen
    * In ADK mode: Sync avatar conversation to ADK session via Session API batch update
+   * Note: Screen transition happens immediately, sync runs in background
    */
-  const handleSwitchToChat = useCallback(async () => {
-    // Only sync in ADK mode
-    if (isADKMode) {
-      try {
-        // Get messages and session state
-        const { messages } = useSessionStore.getState();
-        const { sessionId, lastBatchSyncedIndex, setLastBatchSyncedIndex } =
-          useSessionIdStore.getState();
-
-        // Get new messages since last sync
-        const newMessages = messages.slice(lastBatchSyncedIndex);
-
-        if (newMessages.length > 0) {
-          console.log('[App] Syncing avatar conversation to ADK session:', {
-            sessionId,
-            newMessageCount: newMessages.length,
-            lastBatchSyncedIndex,
-          });
-
-          // Batch update to Session API
-          await sessionAPIClient.injectBatchEvents(sessionId, ADK_USER_ID, newMessages);
-
-          // Update sync index
-          setLastBatchSyncedIndex(messages.length);
-          console.log('[App] Batch sync completed');
-        }
-      } catch (error) {
-        // Log error but don't block screen transition
-        console.error('[App] Batch sync failed:', error);
-      }
-    }
-
+  const handleSwitchToChat = useCallback(() => {
+    // Screen transition first (non-blocking)
     setScreen('chat');
+
+    // Sync in background (ADK mode only)
+    if (isADKMode) {
+      // Use queueMicrotask to run after React render
+      queueMicrotask(async () => {
+        try {
+          // Get messages and session state
+          const { messages } = useSessionStore.getState();
+          const { sessionId, lastBatchSyncedIndex, setLastBatchSyncedIndex } =
+            useSessionIdStore.getState();
+
+          // Get new messages since last sync
+          const newMessages = messages.slice(lastBatchSyncedIndex);
+
+          if (newMessages.length > 0) {
+            console.log('[App] Syncing avatar conversation to ADK session:', {
+              sessionId,
+              newMessageCount: newMessages.length,
+              lastBatchSyncedIndex,
+            });
+
+            // Batch update to Session API
+            await sessionAPIClient.injectBatchEvents(sessionId, ADK_USER_ID, newMessages);
+
+            // Update sync index
+            setLastBatchSyncedIndex(messages.length);
+            console.log('[App] Batch sync completed');
+          }
+        } catch (error) {
+          // Log error but don't affect UI
+          console.error('[App] Batch sync failed:', error);
+        }
+      });
+    }
   }, []);
 
   const handleSwitchToAvatar = useCallback(() => {
@@ -158,56 +175,26 @@ function AvatarViewWithSession({
   isAgentReady: boolean;
   onAgentReady: () => void;
 }) {
-  const { agentState, avatarMessage, userVolume } = useLiveKitSession();
-  const { localParticipant } = useLocalParticipant();
-  const room = useRoomContext();
+  const { agentState, avatarMessage, userVolume, agentVolume } = useLiveKitSession();
 
-  // Auto-start conversation when agent becomes ready (listening state)
+  // Agent가 listening 상태가 되면 isAgentReady 설정 (RPC는 AvatarView에서 isLoaded 체크 후 전송)
   useEffect(() => {
     if (agentState === 'listening' && !conversationStarted) {
-      // Mark agent as ready (ends loading screen)
       onAgentReady();
-      // Transition to conversation UI
       onConversationStart();
-      console.log('[AvatarViewWithSession] Agent ready, auto-starting conversation');
-
-      // Send start_conversation RPC
-      const startConversation = async () => {
-        if (!localParticipant || !room) return;
-
-        try {
-          const remoteParticipants = Array.from(room.remoteParticipants.values());
-          const agentParticipant = remoteParticipants.find(p =>
-            p.identity.startsWith('agent')
-          );
-
-          if (agentParticipant) {
-            console.log('[AvatarViewWithSession] Sending start_conversation RPC...');
-            await localParticipant.performRpc({
-              destinationIdentity: agentParticipant.identity,
-              method: 'start_conversation',
-              payload: '',
-            });
-            console.log('[AvatarViewWithSession] start_conversation RPC sent');
-          } else {
-            console.warn('[AvatarViewWithSession] No agent participant found for RPC');
-          }
-        } catch (error) {
-          console.error('[AvatarViewWithSession] Failed to start conversation:', error);
-        }
-      };
-
-      startConversation();
+      console.log('[AvatarViewWithSession] Agent ready (RPC will be sent from AvatarView after Unity loads)');
     }
-  }, [agentState, conversationStarted, localParticipant, room, onAgentReady, onConversationStart]);
+  }, [agentState, conversationStarted, onAgentReady, onConversationStart]);
 
   return (
     <AvatarView
       lastMessage={avatarMessage}
       agentState={agentState}
       userVolume={userVolume}
+      agentVolume={agentVolume}
       onBack={onBack}
       onSwitchToChat={onSwitchToChat}
+      conversationStarted={conversationStarted}
       isAgentReady={isAgentReady}
     />
   );

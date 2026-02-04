@@ -1,6 +1,7 @@
 import { defineConfig, Plugin, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import svgr from 'vite-plugin-svgr'
 import path from 'path'
 import { AccessToken } from 'livekit-server-sdk'
 
@@ -80,7 +81,7 @@ function livekitTokenPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), livekitTokenPlugin()],
+  plugins: [react(), tailwindcss(), svgr(), livekitTokenPlugin()],
   publicDir: 'public',
   resolve: {
     alias: {

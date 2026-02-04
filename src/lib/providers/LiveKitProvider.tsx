@@ -5,8 +5,12 @@ import { useLiveKit } from '@/lib/hooks';
 import { useLanguageStore } from '@/lib/store/language-store';
 import { useSessionStore } from '@/lib/store/session-store';
 import { useTranslation } from '@/lib/i18n';
-import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { HistoryMessage } from '@/lib/types';
+
+// Constants for JWT metadata size limits
+const MAX_HISTORY_MESSAGES = 20;
+const MAX_MESSAGE_LENGTH = 200;
+const MAX_METADATA_SIZE = 4096; // 4KB limit
 
 interface LiveKitProviderProps {
   children: React.ReactNode;
@@ -25,7 +29,7 @@ interface LiveKitProviderProps {
 export function LiveKitProvider({ children, onDisconnect }: LiveKitProviderProps) {
   const { t } = useTranslation();
   const { language } = useLanguageStore();
-  const { token, serverUrl, connect, reset, isConnecting, error } = useLiveKit();
+  const { token, serverUrl, connect, reset, error } = useLiveKit();
   const hasConnected = useRef(false);
 
   // Auto-connect on mount with chat history
@@ -35,12 +39,25 @@ export function LiveKitProvider({ children, onDisconnect }: LiveKitProviderProps
 
     // Get existing chat messages and convert to history format for agent context
     const { messages } = useSessionStore.getState();
-    const chatHistory: HistoryMessage[] = messages
+
+    // Build chat history with size limits to keep JWT token small
+    let chatHistory: HistoryMessage[] = messages
       .filter((m) => m.isFinal !== false && m.message.trim())
+      .slice(-MAX_HISTORY_MESSAGES) // Limit message count
       .map((m) => ({
         role: m.isUser ? 'user' : 'assistant',
-        content: m.message,
+        // Truncate long messages
+        content: m.message.length > MAX_MESSAGE_LENGTH
+          ? m.message.slice(0, MAX_MESSAGE_LENGTH) + '…'
+          : m.message,
       }));
+
+    // Further trim if total size exceeds limit
+    let serialized = JSON.stringify({ chatHistory });
+    while (serialized.length > MAX_METADATA_SIZE && chatHistory.length > 1) {
+      chatHistory = chatHistory.slice(1);
+      serialized = JSON.stringify({ chatHistory });
+    }
 
     // Connect with chat history in metadata (agent will use for context)
     if (chatHistory.length > 0) {
@@ -67,15 +84,6 @@ export function LiveKitProvider({ children, onDisconnect }: LiveKitProviderProps
     hasConnected.current = false;
     connect(language);
   }, [connect, language]);
-
-  // Loading state
-  if (isConnecting || (!token && !error)) {
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        <LoadingOverlay message={t('common.loading')} />
-      </div>
-    );
-  }
 
   // Error state
   if (error) {

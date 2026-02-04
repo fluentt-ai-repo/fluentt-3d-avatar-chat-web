@@ -6,39 +6,87 @@ import { ChatMessage, AgentState } from '@/lib/types';
 import { useAnimationData } from '@/lib/hooks';
 import { useTranslation } from '@/lib/i18n';
 import { Header } from '@/components/Header';
-import { LoadingOverlay } from '@/components/LoadingOverlay';
-import iconMic from '@/assets/icon-mic-default.svg';
+import IconMic from '@/assets/icon-mic-default.svg?react';
 import iconMicMuted from '@/assets/icon-mic-muted.svg';
-import iconChat from '@/assets/icon-chat-4x.png';
-
-let firstUnityFrameTime: number | null = null;
-let unitySentCount = 0;
+import IconChat from '@/assets/icon-chat.svg?react';
+import avatarBackground from '@/assets/image-avatar-background-4x.png';
+import avatarLoadingImage from '@/assets/image-avatar-loading.png';
 
 interface AvatarViewProps {
   lastMessage?: ChatMessage;
   agentState: AgentState | null;
   userVolume: number;
+  agentVolume: number;
   onBack: () => void;
   onSwitchToChat: () => void;
+  conversationStarted: boolean;
   isAgentReady: boolean;
+}
+
+// 상태 칩 컴포넌트 (Pencil: fCyvC - massagebox)
+function StatusChip({ state }: { state: AgentState | null }) {
+  // Pencil 디자인 기준 상태별 텍스트
+  const labels: Record<string, string> = {
+    listening: '듣는 중이에요',
+    thinking: '생각 중이에요',
+    speaking: '궁금한 점을 물어보세요', // Pencil Speaking 화면 참조
+  };
+
+  // 상태가 없거나 idle일 때는 기본 안내 문구
+  const displayText = state ? labels[state] || '궁금한 점을 물어보세요' : '궁금한 점을 물어보세요';
+
+  return (
+    <div
+      className="flex items-center justify-center"
+      style={{
+        gap: '4px',
+        padding: '4px 8px',
+        borderRadius: '99px',
+        background: '#cdeeff',
+        backdropFilter: 'blur(17.5px)',
+        WebkitBackdropFilter: 'blur(17.5px)',
+      }}
+    >
+      {/* indicator-status-dot (Pencil: S09vc, TPGbL) - 항상 파란색 #01a4f0 */}
+      <div
+        style={{
+          width: '4px',
+          height: '4px',
+          borderRadius: '50%',
+          background: '#01a4f0',
+        }}
+      />
+      {/* Greeting Text (Pencil: Dp21l, iFP6Z) */}
+      <span
+        style={{
+          fontFamily: 'Noto Sans KR, sans-serif',
+          fontSize: '10px',
+          fontWeight: 500,
+          letterSpacing: '-0.2px',
+          lineHeight: 1.4,
+          color: '#01a4f0',
+        }}
+      >
+        {displayText}
+      </span>
+    </div>
+  );
 }
 
 export function AvatarView({
   lastMessage,
   agentState,
   userVolume,
+  agentVolume,
   onBack,
   onSwitchToChat,
+  conversationStarted,
   isAgentReady,
 }: AvatarViewProps) {
   const { t } = useTranslation();
 
-  // Loading state: show loading until both Unity and Agent are ready
-  const isLoading = !isAgentReady;
-
-  // Unity context - load when this component mounts
   const buildName = import.meta.env.VITE_UNITY_BUILD_NAME || 'avatar';
-  const { unityProvider, isLoaded, loadingProgression, sendMessage } = useUnityContext({
+  const { unityProvider, isLoaded, sendMessage } = useUnityContext({
     loaderUrl: `/unity/${buildName}/Build/${buildName}.loader.js`,
     dataUrl: `/unity/${buildName}/Build/${buildName}.data`,
     frameworkUrl: `/unity/${buildName}/Build/${buildName}.framework.js`,
@@ -51,8 +99,17 @@ export function AvatarView({
 
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const hasUserInteracted = useRef(false);
+  const hasStartedConversation = useRef(false);
+  const firstUnityFrameTimeRef = useRef<number | null>(null);
+  const unitySentCountRef = useRef(0);
 
-  // Microphone state tracking
+  useEffect(() => {
+    return () => {
+      firstUnityFrameTimeRef.current = null;
+      unitySentCountRef.current = 0;
+    };
+  }, []);
+
   useEffect(() => {
     if (!localParticipant) return;
 
@@ -91,9 +148,8 @@ export function AvatarView({
     };
   }, [localParticipant]);
 
-  // Auto-enable microphone when Unity is loaded, connected, AND agent is ready
   useEffect(() => {
-    if (localParticipant && isLoaded && connectionState === ConnectionState.Connected && isAgentReady) {
+    if (localParticipant && isLoaded && connectionState === ConnectionState.Connected && conversationStarted) {
       const timer = setTimeout(() => {
         if (!hasUserInteracted.current) {
           localParticipant.setMicrophoneEnabled(true);
@@ -103,7 +159,38 @@ export function AvatarView({
 
       return () => clearTimeout(timer);
     }
-  }, [localParticipant, isLoaded, connectionState, isAgentReady]);
+  }, [localParticipant, isLoaded, connectionState, conversationStarted]);
+
+  // Unity 로딩 완료 + Agent 준비 완료 = 로딩 오버레이 해제 = 아바타 화면 표시
+  // 이 시점에 start_conversation RPC 전송
+  useEffect(() => {
+    if (isLoaded && isAgentReady && !hasStartedConversation.current) {
+      hasStartedConversation.current = true;
+
+      // 아바타가 화면에 보인 후 1.5초 대기
+      const timer = setTimeout(async () => {
+        if (!localParticipant || !room) return;
+
+        try {
+          const remoteParticipants = Array.from(room.remoteParticipants.values());
+          const agentParticipant = remoteParticipants.find(p => p.identity.startsWith('agent'));
+
+          if (agentParticipant) {
+            await localParticipant.performRpc({
+              destinationIdentity: agentParticipant.identity,
+              method: 'start_conversation',
+              payload: '',
+            });
+            console.log('[AvatarView] start_conversation RPC sent (after loading complete)');
+          }
+        } catch (error) {
+          console.error('[AvatarView] Failed to send start_conversation RPC:', error);
+        }
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isLoaded, isAgentReady, localParticipant, room]);
 
   const toggleMic = async () => {
     if (localParticipant) {
@@ -133,14 +220,12 @@ export function AvatarView({
     }
   };
 
-  // Send interrupt signal to Unity
   useEffect(() => {
     if (interruptSignal > 0 && isLoaded) {
       sendMessage('ReactBridge', 'OnAnimationData', 'interrupted');
     }
   }, [interruptSignal, isLoaded, sendMessage]);
 
-  // Send agent state to Unity
   useEffect(() => {
     if (isLoaded && agentState) {
       const message = JSON.stringify({ action: 'setAgentState', state: agentState });
@@ -148,17 +233,16 @@ export function AvatarView({
     }
   }, [isLoaded, agentState, sendMessage]);
 
-  // Send animation frames to Unity
   useEffect(() => {
     if (isLoaded && latestFrame) {
       const now = performance.now();
 
-      if (firstUnityFrameTime === null) {
-        firstUnityFrameTime = now;
+      if (firstUnityFrameTimeRef.current === null) {
+        firstUnityFrameTimeRef.current = now;
         console.log('[AvatarView -> Unity] First frame sent');
       }
 
-      unitySentCount++;
+      unitySentCountRef.current++;
 
       let frameString: string;
       if (latestFrame.length === 208) {
@@ -169,61 +253,157 @@ export function AvatarView({
 
       sendMessage('ReactBridge', 'OnAnimationData', frameString);
 
-      if (unitySentCount % 20 === 0) {
-        const elapsed = now - (firstUnityFrameTime || now);
-        const avgInterval = elapsed / unitySentCount;
-        console.log(`[AvatarView -> Unity] Sent ${unitySentCount} frames, ~${(1000 / avgInterval).toFixed(1)} FPS`);
+      if (unitySentCountRef.current % 20 === 0) {
+        const elapsed = now - (firstUnityFrameTimeRef.current || now);
+        const avgInterval = elapsed / unitySentCountRef.current;
+        console.log(`[AvatarView -> Unity] Sent ${unitySentCountRef.current} frames, ~${(1000 / avgInterval).toFixed(1)} FPS`);
       }
     }
   }, [isLoaded, latestFrame, sendMessage]);
 
-  // Show loading overlay until both Unity is loaded AND agent is ready
-  const showLoadingOverlay = !isLoaded || isLoading;
-
   return (
-    <div className="bg-white relative w-full h-full overflow-hidden">
-      {/* Loading overlay - Unity must render in background for loading to progress */}
-      {showLoadingOverlay && (
-        <div className="absolute inset-0 z-[100] bg-white flex flex-col">
-          {/* Header - Fixed at top with safe-area */}
+    <div
+      className="relative w-full h-full overflow-hidden"
+      style={{
+        backgroundImage: `url(${avatarBackground})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {/* Loading overlay - Unity 로딩 + Agent 준비 완료까지 표시 */}
+      {(!isLoaded || !isAgentReady) && (
+        <div className="absolute inset-0 z-[100] overflow-hidden bg-[#a8d8ea]">
+          {/* 배경 이미지 */}
+          <img
+            src={avatarLoadingImage}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+
+          {/* header (Pencil: dznzD) - 기존 Header 컴포넌트 사용 */}
           <div
-            className="fixed top-0 left-0 right-0 w-full max-w-[480px] mx-auto z-[200] bg-white"
+            className="absolute top-0 left-0 right-0 w-full max-w-[480px] mx-auto z-[200]"
             style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           >
             <Header onBack={onBack} />
           </div>
-          {/* Spacer for fixed header */}
-          <div style={{ height: 'calc(56px + env(safe-area-inset-top, 0px))' }} />
-          <div className="flex-1 flex items-center justify-center">
-            <LoadingOverlay progress={isLoaded ? 1 : loadingProgression} />
+
+          {/* container (Pencil: hc0uU) - 텍스트 영역 */}
+          <div
+            className="absolute left-0 right-0 flex flex-col items-center"
+            style={{
+              top: 134,
+              padding: '20px 20px 8px 20px',
+              gap: 8,
+            }}
+          >
+            {/* FAQ Title - AI 캐릭터를 불러오고 있어요! */}
+            <h1
+              style={{
+                fontFamily: 'Noto Sans KR, sans-serif',
+                fontSize: 20,
+                fontWeight: 700,
+                letterSpacing: -0.4,
+                lineHeight: 1.4,
+                color: '#000000',
+                textAlign: 'center',
+                width: '100%',
+              }}
+            >
+              AI 캐릭터를 불러오고 있어요!
+            </h1>
+            {/* FAQ Title - 서브 텍스트 */}
+            <p
+              style={{
+                fontFamily: 'Noto Sans KR, sans-serif',
+                fontSize: 14,
+                fontWeight: 'normal',
+                letterSpacing: -0.28,
+                lineHeight: 1.4,
+                color: '#000000',
+                opacity: 0.5,
+                textAlign: 'center',
+                width: '100%',
+              }}
+            >
+              내 목소리를 듣고 자연스럽게 대답하는 캐릭터와
+              <br />
+              편리하게 대화할 수 있습니다
+            </p>
+          </div>
+
+          {/* container-greeting-bubble (Pencil: n4MDf) */}
+          <div
+            className="absolute flex flex-col items-center"
+            style={{ top: 278, left: '50%', transform: 'translateX(-50%)' }}
+          >
+            {/* massagebox (Pencil: 5khCJ) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '8px 12px',
+                borderRadius: 999,
+                background: '#ffffff',
+                backdropFilter: 'blur(17.5px)',
+                WebkitBackdropFilter: 'blur(17.5px)',
+              }}
+            >
+              {/* Greeting Text (Pencil: 5y1vq) */}
+              <span
+                style={{
+                  fontFamily: 'Noto Sans KR, sans-serif',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  letterSpacing: -0.28,
+                  lineHeight: 1.4,
+                  color: '#01a4f0',
+                  textAlign: 'center',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                궁금한것 무엇이든 물어보세요
+              </span>
+            </div>
+            {/* 말풍선 꼬리 (Pencil: AJxHK - Vector 3258) */}
+            <div
+              style={{
+                width: 0,
+                height: 0,
+                borderLeft: '8px solid transparent',
+                borderRight: '8px solid transparent',
+                borderTop: '8px solid #ffffff',
+              }}
+            />
           </div>
         </div>
       )}
 
       <div className="flex flex-col h-full">
-        {/* Header - Fixed at top with safe-area */}
+        {/* Agent speaking gradient - 상단 녹색 (Pencil: effect-gradient-green) */}
+        {/* 볼륨에 따라 동적으로 높이와 투명도 변경 */}
+        {/* 항상 렌더링 + opacity로 제어하여 부드러운 fade-out 구현 */}
         <div
-          className="fixed top-0 left-0 right-0 w-full max-w-[480px] mx-auto z-[200] bg-white"
+          className="absolute left-0 right-0 top-0 pointer-events-none z-[40]"
+          style={{
+            height: agentState === 'speaking' ? `${15 + agentVolume * 25}%` : '15%',
+            background: 'linear-gradient(to bottom, #71f0a7, transparent)',
+            opacity: agentState === 'speaking' ? 0.3 + agentVolume * 0.7 : 0,
+            transition: 'height 0.2s ease-out, opacity 0.3s ease-out', // fade-out은 0.3s로 약간 길게
+          }}
+        />
+
+        {/* Header - 투명 배경 (Pencil: aY7E1) */}
+        <div
+          className="absolute top-0 left-0 right-0 w-full max-w-[480px] mx-auto z-[200]"
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
           <Header onBack={onBack} />
         </div>
-        {/* Spacer for fixed header */}
         <div className="shrink-0" style={{ height: 'calc(56px + env(safe-area-inset-top, 0px))' }} />
 
-        {/* Message display area */}
-        <div
-          className="shrink-0 px-5 flex flex-col justify-end overflow-hidden"
-          style={{ height: 'calc(20px * var(--font-scale, 1) * 1.4 * 3 + 32px)' }}
-        >
-          {isLoaded && lastMessage && (
-            <p className="text-[20px] leading-[1.4] tracking-[-0.46px] text-black text-center">
-              {lastMessage.message}
-            </p>
-          )}
-        </div>
-
-        {/* Unity container - must always render for loading to work */}
+        {/* Unity container */}
         <div className="flex-1 relative min-h-[300px]">
           <div className="absolute inset-0 flex justify-center items-end" style={{ zIndex: 45 }}>
             <div style={{ width: 'min(360px, 100vw)', height: '100%' }}>
@@ -232,72 +412,157 @@ export function AvatarView({
           </div>
         </div>
 
-        {/* Footer - Conversation UI */}
-        <div className="shrink-0 relative z-[70]">
-          {/* Gradient overlay */}
-          <div className="w-full h-[100px] bg-gradient-to-b from-transparent to-white -mt-[100px] pointer-events-none" />
-
-          {/* Volume indicator */}
-          {isMicEnabled && (
-            <div
-              className="absolute left-0 right-0 bottom-0 pointer-events-none"
-              style={{
-                height: '150px',
-                zIndex: 60,
-                background: 'linear-gradient(to top, rgba(0, 45, 152, 0.5), transparent)',
-                opacity: userVolume > 0.02 ? Math.min((userVolume - 0.02) * 3, 1) : 0,
-                transition: 'opacity 0.2s ease-in-out',
-              }}
-            />
-          )}
-
-          {/* Footer background layer - z-55, covered by volume */}
-          <div className="absolute inset-0 z-[55]">
-            <div className="w-full h-[100px] bg-gradient-to-b from-transparent to-white -mt-[100px] pointer-events-none" />
-            <div
-              className="bg-white h-[70px] w-full"
-              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-            />
-          </div>
-
-          {/* Buttons/text layer - z-90, above volume */}
+        {/* User speaking gradient - 하단 파란색 (Pencil: effect-gradient-blue) */}
+        {/* 바텀 패널 위쪽 영역만 커버, 투명도만 조절 */}
+        {isMicEnabled && (
           <div
-            className="relative z-[90] flex items-center justify-between px-8 py-4"
-            style={{ paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
-          >
-            {/* Chat mode button */}
-            <button
-              onClick={onSwitchToChat}
-              className="w-16 h-16 rounded-full bg-white flex items-center justify-center"
-              style={{ border: '1.5px solid rgba(0, 45, 152, 0.2)' }}
-            >
-              <img src={iconChat} alt="" className="w-6 h-6" />
-            </button>
+            className="absolute left-0 right-0 pointer-events-none z-[60]"
+            style={{
+              top: '40%',
+              bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))', // 바텀 패널 높이만큼 위에서 멈춤
+              background: 'linear-gradient(to top, rgba(0, 145, 212, 0.8), transparent 70%)',
+              opacity: userVolume > 0.1 ? Math.min((userVolume - 0.1) * 3, 1) : 0,
+              transition: 'opacity 0.2s ease-out',
+            }}
+          />
+        )}
 
-            {/* Agent state */}
-            <div className="flex-1 text-center">
-              <p className="text-[16px] text-[#666666] font-medium">
-                {agentState === 'listening' && t('avatar.listening')}
-                {agentState === 'thinking' && t('avatar.thinking')}
-                {agentState === 'speaking' && t('avatar.speaking')}
-              </p>
+        {/* Footer - section-bottom-panel (Pencil: PJFTo) */}
+        {/* 높이 고정: 상태칩(22) + 메시지(62) + 버튼(50) + gap(20) + padding(40) = 194px */}
+        <div
+            className="shrink-0 relative z-[70] flex flex-col items-center"
+            style={{
+              height: 'calc(194px + env(safe-area-inset-bottom, 0px))',
+              padding: '16px 20px 24px 20px',
+              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+              background: 'rgba(255, 255, 255, 0.7)',
+              backdropFilter: 'blur(35px)',
+              WebkitBackdropFilter: 'blur(35px)',
+              borderRadius: '20px 20px 0 0',
+              boxShadow: '0 -8.75px 8.75px rgba(3, 195, 255, 0.2)',
+              gap: '10px',
+            }}
+          >
+            {/* container-status-message (Pencil: Rwhg3) */}
+            <div
+              className="relative z-[71] flex flex-col items-center"
+              style={{
+                gap: '8px',
+                width: '100%',
+              }}
+            >
+              {/* 상태 칩 (Pencil: fCyvC) */}
+              <StatusChip state={agentState} />
+
+              {/* 메시지 텍스트 영역 - 3줄 고정 높이, 초과 시 위쪽 잘림 */}
+              <div
+                className="overflow-hidden flex flex-col justify-end"
+                style={{
+                  height: '62px', // 3줄 높이 (16px × 1.3 × 3 ≈ 62px)
+                  width: '100%',
+                }}
+              >
+                {lastMessage && (
+                  <p
+                    style={{
+                      fontFamily: 'Pretendard, sans-serif',
+                      fontSize: '16px',
+                      fontWeight: 'normal',
+                      letterSpacing: '-0.16px',
+                      lineHeight: 1.3,
+                      textAlign: 'center',
+                      color: '#000000',
+                      width: '100%',
+                    }}
+                  >
+                    {lastMessage.message}
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* Mic toggle */}
-            <button
-              onClick={toggleMic}
-              onDoubleClick={handleInterruptAgent}
-              className="w-16 h-16 rounded-full bg-white flex items-center justify-center"
-              style={{ border: '1.5px solid rgba(0, 45, 152, 0.2)' }}
+            {/* container-action-buttons (Pencil: S041B) */}
+            <div
+              className="relative z-[71] flex items-center justify-between"
+              style={{
+                width: '320px',
+              }}
             >
-              <img
-                src={isMicEnabled ? iconMic : iconMicMuted}
-                alt=""
-                className="w-6 h-6"
-              />
-            </button>
+              {/* 좌측: 마이크 버튼 (Pencil: h4eN4) */}
+              <button
+                onClick={toggleMic}
+                onDoubleClick={handleInterruptAgent}
+                className="flex items-center justify-center"
+                style={isMicEnabled ? {
+                  height: '50px',
+                  gap: '4px',
+                  padding: '0 20px',
+                  borderRadius: '999px',
+                  background: 'linear-gradient(137.78deg, #03c3ff 0%, #03c177 100%)',
+                  boxShadow: '0 4px 15px rgba(3, 195, 255, 0.5)',
+                  border: '1.5px solid transparent',
+                } : {
+                  height: '50px',
+                  gap: '4px',
+                  padding: '0 20px',
+                  borderRadius: '999px',
+                  background: '#f8cad2',
+                  border: '0.5px solid rgba(218, 32, 61, 0.15)',
+                }}
+                aria-label={isMicEnabled ? t('accessibility.muteMic') : t('accessibility.unmuteMic')}
+                aria-pressed={isMicEnabled}
+              >
+                {isMicEnabled ? (
+                  <IconMic className="w-[17px] h-[23px]" style={{ color: '#ffffff' }} />
+                ) : (
+                  <img src={iconMicMuted} alt="" className="w-[17px] h-[23px]" />
+                )}
+                <span
+                  style={{
+                    fontFamily: 'Pretendard, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    letterSpacing: '-0.14px',
+                    lineHeight: 1.3,
+                    color: isMicEnabled ? '#ffffff' : '#da203d',
+                    textAlign: 'center',
+                  }}
+                >
+                  음소거
+                </span>
+              </button>
+
+              {/* 우측: 채팅 버튼 (Pencil: fR1NA) */}
+              <button
+                onClick={onSwitchToChat}
+                className="flex items-center justify-center"
+                style={{
+                  height: '50px',
+                  gap: '4px',
+                  padding: '0 20px',
+                  borderRadius: '999px',
+                  background: '#ffffff',
+                  border: '0.5px solid rgba(1, 45, 152, 0.15)',
+                }}
+                aria-label={t('accessibility.switchToChat')}
+              >
+                <IconChat className="w-6 h-6" />
+                <span
+                  style={{
+                    fontFamily: 'Pretendard, sans-serif',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    letterSpacing: '-0.14px',
+                    lineHeight: 1.3,
+                    color: '#03c3e2',
+                    textAlign: 'center',
+                  }}
+                >
+                  채팅
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
       </div>
     </div>
   );

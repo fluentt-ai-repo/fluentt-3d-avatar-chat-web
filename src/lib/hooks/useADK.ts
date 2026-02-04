@@ -5,7 +5,7 @@ import { useSessionIdStore } from '@/lib/store/session-id-store';
 import { ChatMessage } from '@/lib/types';
 
 interface UseADKReturn {
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, toolPrefix?: string) => Promise<void>;
   isLoading: boolean;
   error: string | null;
   sessionId: string;
@@ -63,13 +63,13 @@ export function useADK(): UseADKReturn {
     }
   }, [sessionId, isSessionCreated, setSessionCreated]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, toolPrefix?: string) => {
     if (!text.trim()) return;
 
     setIsLoading(true);
     setError(null);
 
-    // Add user message to store
+    // Add user message to store (without prefix - user sees original text)
     const userMessage: ChatMessage = {
       id: `user_${Date.now()}`,
       message: text,
@@ -79,6 +79,9 @@ export function useADK(): UseADKReturn {
       isFinal: true,
     };
     addMessage(userMessage);
+
+    // Prepend prefix if provided (for Agent routing)
+    const messageText = toolPrefix ? `${toolPrefix}${text}` : text;
 
     // Create agent message placeholder
     const agentMessageId = `agent_${Date.now()}`;
@@ -106,7 +109,7 @@ export function useADK(): UseADKReturn {
         sessionId: sessionId,
         newMessage: {
           role: 'user',
-          parts: [{ text }],
+          parts: [{ text: messageText }], // Include prefix for Agent routing
         },
         streaming: true, // Enable token-level streaming for real-time response
       };
@@ -114,7 +117,8 @@ export function useADK(): UseADKReturn {
       console.log('[useADK] Sending request:', {
         url: `${ADK_URL}/run_sse`,
         sessionId: sessionId,
-        text,
+        text: messageText,
+        hasPrefix: !!toolPrefix,
       });
 
       const response = await fetch(`${ADK_URL}/run_sse`, {

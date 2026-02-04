@@ -3,11 +3,15 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --primary: #6490ff;
-  --primary-hover: #4070ff;
+  --primary: #00A0E9;
+  --primary-hover: #0091D4;
+  --primary-dark: #002D98;
   --background-light: #f0f3ff;
   --text-primary: #111111;
   --text-secondary: #666666;
+  --chip-border: #E0E0E0;
+  --user-bubble: #012D98;
+  --chatbar-shadow: rgba(3, 195, 255, 0.2);
 
   /* Font scale for accessibility */
   --font-scale: 1;
@@ -31,8 +35,15 @@
   --color-text-secondary: var(--text-secondary);
 }
 
-html, body, #root {
+html, body {
   height: 100%;
+}
+
+#root {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 body {
@@ -80,4 +91,53 @@ body {
 
 .animate-wave {
   animation: wave 1s ease-in-out infinite;
+}
+
+/* Greeting ellipse gradient (Ellipse 1009) */
+.greeting-ellipse {
+  background:
+    radial-gradient(ellipse 32% 52% at 58% 59%, rgba(255, 255, 255, 0.3) 0%, transparent 100%),
+    radial-gradient(circle 40% at 19% 7%, rgba(255, 255, 255, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 86% at 50% 40%, rgba(114, 142, 255, 0.5) 0%, transparent 100%),
+    radial-gradient(circle 95% at 58% 77%, #62e5b5 0%, transparent 100%),
+    radial-gradient(circle 100% at 43% 31%, #43c3fb 0%, transparent 100%),
+    radial-gradient(circle 94% at 80% 58%, #62e5e3 0%, transparent 100%),
+    radial-gradient(circle 107% at 41% 68%, #74e1f9 0%, transparent 100%),
+    #ffffff;
+  border-radius: 50%;
+  filter: blur(3.5px);
+}
+
+/* Chatbar shadow effect */
+.chatbar-shadow {
+  box-shadow: 0 0 8.75px rgba(3, 195, 255, 0.2);
+}
+
+/* Mic button shadow effect */
+.mic-button-shadow {
+  box-shadow: 0 4px 14.96px -2px #03c3ff;
+}
+
+/* Textarea custom scrollbar */
+.textarea-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.textarea-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.textarea-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.textarea-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Firefox */
+.textarea-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }

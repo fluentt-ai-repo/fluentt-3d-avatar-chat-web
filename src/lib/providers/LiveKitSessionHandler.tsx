@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, createContext, useContext, ReactNode } from 'react';
+import { useEffect, useRef, useState, createContext, useContext, ReactNode, useCallback } from 'react';
 import { useLocalParticipant, useRoomContext, useTracks, AudioTrack, TrackReference } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { useAudioContext, useTrackVolume } from '@/lib/hooks';
@@ -9,6 +9,7 @@ interface LiveKitSessionContextValue {
   agentState: AgentState | null;
   avatarMessage: ChatMessage | undefined;
   userVolume: number;
+  agentVolume: number;
 }
 
 const LiveKitSessionContext = createContext<LiveKitSessionContextValue | null>(null);
@@ -45,6 +46,12 @@ export function LiveKitSessionHandler({ children, enableAudio = false }: LiveKit
   const rpcHandlerRegistered = useRef(false);
   const transcriptionHandlerRegistered = useRef(false);
 
+  // Store refs to avoid stale closures in registered handlers
+  const addMessageRef = useRef(addMessage);
+  const updateMessageRef = useRef(updateMessage);
+  addMessageRef.current = addMessage;
+  updateMessageRef.current = updateMessage;
+
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
 
@@ -60,26 +67,34 @@ export function LiveKitSessionHandler({ children, enableAudio = false }: LiveKit
   const userMicTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
   const userVolume = useTrackVolume(userMicTrack);
 
+  // Agent audio volume for green gradient animation
+  const agentTracks = audioTracks.filter(
+    (track) => track.participant.identity.startsWith('agent') && track.publication
+  );
+  const agentAudioTrack = agentTracks[0]?.publication?.track;
+  const agentVolume = useTrackVolume(agentAudioTrack);
+
+  // Memoized RPC handler
+  const handleRpc = useCallback(async (data: { payload: string; callerIdentity: string }) => {
+    try {
+      const payload = JSON.parse(data.payload);
+      const newState = payload.new_state as AgentState;
+      setAgentState(newState);
+      console.log('[LiveKitSessionHandler] Agent state changed:', newState);
+    } catch (e) {
+      console.error('[LiveKitSessionHandler] Failed to parse RPC payload:', e);
+    }
+    return '';
+  }, []);
+
   // Register RPC handler for agent state changes
   useEffect(() => {
     if (!localParticipant || rpcHandlerRegistered.current) return;
 
-    const handleRpc = async (data: { payload: string; callerIdentity: string }) => {
-      try {
-        const payload = JSON.parse(data.payload);
-        const newState = payload.new_state as AgentState;
-        setAgentState(newState);
-        console.log('[LiveKitSessionHandler] Agent state changed:', newState);
-      } catch (e) {
-        console.error('[LiveKitSessionHandler] Failed to parse RPC payload:', e);
-      }
-      return '';
-    };
-
     localParticipant.registerRpcMethod('agent_state_changed', handleRpc);
     rpcHandlerRegistered.current = true;
     console.log('[LiveKitSessionHandler] RPC handler registered');
-  }, [localParticipant]);
+  }, [localParticipant, handleRpc]);
 
   // Register TextStream handler for transcription
   useEffect(() => {
@@ -128,12 +143,12 @@ export function LiveKitSessionHandler({ children, enableAudio = false }: LiveKit
           const existingMessage = currentMessages.find(m => m.id === messageId);
 
           if (existingMessage) {
-            updateMessage(messageId, updatedMessage);
+            updateMessageRef.current(messageId, updatedMessage);
           } else if (!messageAdded) {
-            addMessage(updatedMessage);
+            addMessageRef.current(updatedMessage);
             messageAdded = true;
           } else {
-            updateMessage(messageId, updatedMessage);
+            updateMessageRef.current(messageId, updatedMessage);
           }
         }
 
@@ -150,7 +165,7 @@ export function LiveKitSessionHandler({ children, enableAudio = false }: LiveKit
           setAvatarMessage(finalMessage);
         }
 
-        updateMessage(messageId, finalMessage);
+        updateMessageRef.current(messageId, finalMessage);
       } catch (error) {
         console.error('[LiveKitSessionHandler] Transcription error:', error);
       }
@@ -159,12 +174,13 @@ export function LiveKitSessionHandler({ children, enableAudio = false }: LiveKit
     room.registerTextStreamHandler('lk.transcription', handleTranscription);
     transcriptionHandlerRegistered.current = true;
     console.log('[LiveKitSessionHandler] Transcription handler registered');
-  }, [room, localParticipant, addMessage, updateMessage]);
+  }, [room, localParticipant]);
 
   const contextValue: LiveKitSessionContextValue = {
     agentState,
     avatarMessage,
     userVolume,
+    agentVolume,
   };
 
   return (
