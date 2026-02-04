@@ -19,6 +19,7 @@ React + LiveKit + Unity WebGL 3D avatar chat template with **dual-mode support**
 | Chat API | ADK (Agent Development Kit) - optional |
 | 3D Avatar | Unity WebGL + react-unity-webgl |
 | Markdown | react-markdown (Agent 메시지 렌더링) |
+| SVG | vite-plugin-svgr (SVG를 React 컴포넌트로 import) |
 | Deploy | Vercel |
 
 ## Architecture
@@ -53,6 +54,11 @@ App.tsx (screen state)
 | `App.tsx` | Screen switching (chat ↔ avatar) + mode routing |
 | `ChatView` | Text chat UI (supports both ADK and LiveKit modes) + Markdown rendering |
 | `AvatarView` | Unity WebGL integration + mic control |
+| `FAQChips` | FAQ 버튼 목록 (검색/외부링크 타입, SVGR 아이콘) |
+| `LanguageDropdown` | 언어 선택 드롭다운 |
+| `ToolPopup` | 검색 모드 선택 팝업 |
+| `TagChip` | 선택된 검색 모드 태그 표시 (X 버튼으로 제거) |
+| `Header` | 헤더 (뒤로가기, 로고, 언어 버튼) |
 
 ### Markdown Rendering (ChatView)
 
@@ -76,14 +82,18 @@ User 메시지는 plain text로 렌더링됩니다.
 
 | File | Role |
 |------|------|
-| `src/lib/config.ts` | Environment variable helpers (mode detection) |
+| `src/lib/config.ts` | 환경변수, FAQ_ITEMS, TOOL_OPTIONS (prefix 포함), LANGUAGES 설정 |
 | `src/lib/providers/LiveKitProvider.tsx` | LiveKit connection wrapper |
 | `src/lib/providers/LiveKitSessionHandler.tsx` | RPC/Transcription handlers |
 | `src/lib/hooks/useLiveKit.ts` | LiveKit token generation |
 | `src/lib/hooks/useADK.ts` | ADK API communication |
 | `src/lib/hooks/useAnimationData.ts` | Animation frame processing (60→20fps) |
-| `src/pages/ChatView.tsx` | Text chat UI (dual-mode) |
+| `src/pages/ChatView.tsx` | Text chat UI (dual-mode) + Greeting/Tool/Tag UI |
 | `src/pages/AvatarView.tsx` | Unity integration + mic toggle |
+| `src/components/FAQChips.tsx` | FAQ 버튼 컴포넌트 |
+| `src/components/LanguageDropdown.tsx` | 언어 선택 드롭다운 |
+| `src/components/ToolPopup.tsx` | 검색 모드 선택 팝업 |
+| `src/components/TagChip.tsx` | 선택된 모드 태그 |
 | `api/token.ts` | Vercel Serverless token generation |
 
 ## RPC Methods
@@ -107,6 +117,7 @@ User 메시지는 plain text로 렌더링됩니다.
 | Store | Purpose | File |
 |-------|---------|------|
 | `useSessionStore` | Chat messages (shared by ADK/LiveKit) | `src/lib/store/session-store.ts` |
+| `useSessionIdStore` | ADK session ID persistence | `src/lib/store/session-id-store.ts` |
 | `useLanguageStore` | i18n language | `src/lib/store/language-store.ts` |
 
 ## Development
@@ -125,6 +136,8 @@ VITE_CHAT_MODE=livekit      # 'livekit' (default) or 'adk'
 
 # ADK Configuration (only for VITE_CHAT_MODE=adk)
 VITE_ADK_URL=http://localhost:9101
+VITE_ADK_APP_NAME=your_app_name
+VITE_ADK_USER_ID=web_user
 
 # LiveKit Configuration
 VITE_LIVEKIT_URL=wss://xxx.livekit.cloud
@@ -132,6 +145,10 @@ VITE_ROOM_PREFIX=avatar
 
 # Unity WebGL Build
 VITE_UNITY_BUILD_NAME=eric
+
+# Session API Configuration (optional, for ADK mode sync)
+VITE_SESSION_API_URL=https://api.example.com/sessions
+VITE_SESSION_API_KEY=your-api-key
 
 # Server-side (for token generation)
 LIVEKIT_API_KEY=xxx
@@ -192,7 +209,12 @@ Edit `src/lib/i18n/ko.json` and `en.json`.
 
 ```typescript
 const { sendMessage, isLoading } = useADK();
+
+// Basic message
 await sendMessage('Hello');
+
+// With tool prefix for agent routing
+await sendMessage('Hello', '@@TOOL:manual@@');
 ```
 
 ### Send RPC to Agent (LiveKit Mode)
@@ -209,7 +231,7 @@ await localParticipant.performRpc({
 
 ```typescript
 // Inside LiveKitSessionHandler
-const { agentState, avatarMessage, userVolume } = useLiveKitSession();
+const { agentState, avatarMessage, userVolume, agentVolume } = useLiveKitSession();
 ```
 
 ### Send to Unity
@@ -223,4 +245,19 @@ sendMessage('ReactBridge', 'OnReactMessage', JSON.stringify({
   action: 'setAgentState',
   state: 'speaking'
 }));
+```
+
+### SVGR 사용법
+
+```typescript
+// SVG를 React 컴포넌트로 import (?react 접미사 필수)
+import IconSearch from '@/assets/icon-search.svg?react';
+
+// 사용 - currentColor로 부모 color 속성 상속
+<IconSearch className="w-4 h-4" />
+
+// 동적 색상 제어
+<div style={{ color: isSelected ? '#03c3ff' : '#77818c' }}>
+  <IconCheck className="w-4 h-4" />
+</div>
 ```
