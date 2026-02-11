@@ -91,6 +91,11 @@ export function AvatarView({
     dataUrl: `/unity/${buildName}/Build/${buildName}.data`,
     frameworkUrl: `/unity/${buildName}/Build/${buildName}.framework.js`,
     codeUrl: `/unity/${buildName}/Build/${buildName}.wasm`,
+    webglContextAttributes: {
+      alpha: true,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: false,
+    },
   });
   const { latestFrame, interruptSignal } = useAnimationData();
   const { localParticipant } = useLocalParticipant();
@@ -109,6 +114,34 @@ export function AvatarView({
       unitySentCountRef.current = 0;
     };
   }, []);
+
+  // iOS Safari workaround: Send background color to Unity
+  // Safari doesn't properly support WebGL alpha transparency
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    if (!isIOS) return;
+
+    // Get computed background color from body
+    const bgColor = getComputedStyle(document.body).backgroundColor;
+
+    // Convert rgb(r, g, b) to hex #rrggbb
+    const rgbToHex = (rgb: string): string => {
+      const match = rgb.match(/\d+/g);
+      if (!match || match.length < 3) return '#000000';
+      const [r, g, b] = match.map(Number);
+      return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+    };
+
+    const hexColor = rgbToHex(bgColor);
+    console.log('[AvatarView] iOS Safari detected, sending background color to Unity:', hexColor);
+
+    sendMessage('ReactBridge', 'OnReactMessage', JSON.stringify({
+      action: 'setBackgroundColor',
+      backgroundColor: hexColor,
+    }));
+  }, [isLoaded, sendMessage]);
 
   useEffect(() => {
     if (!localParticipant) return;
@@ -407,7 +440,7 @@ export function AvatarView({
         <div className="flex-1 relative min-h-[300px]">
           <div className="absolute inset-0 flex justify-center items-end" style={{ zIndex: 45 }}>
             <div style={{ width: 'min(360px, 100vw)', height: '100%' }}>
-              <Unity unityProvider={unityProvider} style={{ width: '100%', height: '100%' }} />
+              <Unity unityProvider={unityProvider} devicePixelRatio={window.devicePixelRatio} style={{ width: '100%', height: '100%' }} />
             </div>
           </div>
         </div>
